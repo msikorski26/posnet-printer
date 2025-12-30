@@ -9,13 +9,11 @@ import (
 	"strings"
 )
 
-// Transaction reprezentuje transakcję z CSV
 type Transaction struct {
-	Date   string // YYYY-MM-DD
-	Amount int    // kwota w groszach
+	Date   string
+	Amount int
 }
 
-// ParseCSVFile parsuje jeden plik CSV
 func ParseCSVFile(path string) ([]Transaction, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -31,20 +29,17 @@ func ParseCSVFile(path string) ([]Transaction, error) {
 		lineNum++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
-			continue // pusta linia
+			continue
 		}
 
-		// Format: 2025-12-01; 197,99
 		parts := strings.Split(line, ";")
 		if len(parts) != 2 {
-			// Może być błąd w linii, ale kontynuujemy
 			continue
 		}
 
 		date := strings.TrimSpace(parts[0])
 		amountStr := strings.TrimSpace(parts[1])
 
-		// Konwertuj kwotę: "197,99" -> 19799 groszy
 		amountStr = strings.ReplaceAll(amountStr, ",", ".")
 		amountFloat, err := strconv.ParseFloat(amountStr, 64)
 		if err != nil {
@@ -52,7 +47,7 @@ func ParseCSVFile(path string) ([]Transaction, error) {
 			continue
 		}
 
-		amountGr := int(amountFloat*100 + 0.5) // zaokrąglenie
+		amountGr := int(amountFloat*100 + 0.5)
 
 		transactions = append(transactions, Transaction{
 			Date:   date,
@@ -67,7 +62,6 @@ func ParseCSVFile(path string) ([]Transaction, error) {
 	return transactions, nil
 }
 
-// ParseCSVDirectory parsuje wszystkie pliki CSV w katalogu
 func ParseCSVDirectory(dirPath string) ([]Transaction, error) {
 	files, err := filepath.Glob(filepath.Join(dirPath, "*.csv"))
 	if err != nil {
@@ -91,7 +85,6 @@ func ParseCSVDirectory(dirPath string) ([]Transaction, error) {
 	return allTransactions, nil
 }
 
-// GroupByDate grupuje transakcje po datach
 func GroupByDate(transactions []Transaction) map[string][]Transaction {
 	grouped := make(map[string][]Transaction)
 	for _, t := range transactions {
@@ -100,7 +93,6 @@ func GroupByDate(transactions []Transaction) map[string][]Transaction {
 	return grouped
 }
 
-// GetUniqueDates zwraca posortowaną listę unikalnych dat
 func GetUniqueDates(transactions []Transaction) []string {
 	dateSet := make(map[string]bool)
 	for _, t := range transactions {
@@ -112,7 +104,6 @@ func GetUniqueDates(transactions []Transaction) []string {
 		dates = append(dates, date)
 	}
 
-	// Sortowanie dat (proste sortowanie stringów działa dla YYYY-MM-DD)
 	for i := 0; i < len(dates); i++ {
 		for j := i + 1; j < len(dates); j++ {
 			if dates[i] > dates[j] {

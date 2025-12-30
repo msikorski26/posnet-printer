@@ -11,7 +11,6 @@ import (
 )
 
 func main() {
-	// Flagi wiersza poleceń
 	var (
 		configPath = flag.String("config", "config.json", "Ścieżka do pliku konfiguracji")
 		csvPath    = flag.String("csv", "", "Ścieżka do pliku CSV (np. raporty/01.csv) lub katalogu z plikami CSV")
@@ -20,7 +19,6 @@ func main() {
 	)
 	flag.Parse()
 
-	// Utworzenie przykładowego configa
 	if *createCfg {
 		cfg := CreateExampleConfig()
 		if err := cfg.SaveConfig(*configPath); err != nil {
@@ -32,7 +30,6 @@ func main() {
 		return
 	}
 
-	// Sprawdzenie parametrów
 	if *csvPath == "" {
 		fmt.Fprintln(os.Stderr, "Błąd: wymagany parametr -csv")
 		fmt.Fprintln(os.Stderr, "Użycie: druk -csv raporty/01.csv [-config config.json]")
@@ -40,7 +37,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Wczytanie konfiguracji
 	fmt.Printf("→ Wczytuję konfigurację z %s...\n", *configPath)
 	cfg, err := LoadConfig(*configPath)
 	if err != nil {
@@ -49,17 +45,14 @@ func main() {
 	}
 	fmt.Println("✓ Konfiguracja wczytana")
 
-	// Zapisz początkowe stany produktów
 	initialStock := make(map[string]int)
 	for _, p := range cfg.Products {
 		initialStock[p.Name] = p.Stock
 	}
 
-	// Parsowanie CSV
 	fmt.Printf("→ Wczytuję transakcje z %s...\n", *csvPath)
 	var transactions []Transaction
 
-	// Sprawdź czy to plik czy katalog
 	info, err := os.Stat(*csvPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Błąd dostępu do %s: %v\n", *csvPath, err)
@@ -84,15 +77,12 @@ func main() {
 
 	fmt.Printf("✓ Wczytano %d transakcji\n", len(transactions))
 
-	// Grupowanie po datach
 	grouped := GroupByDate(transactions)
 	dates := GetUniqueDates(transactions)
 	fmt.Printf("✓ Znaleziono %d unikalnych dni\n", len(dates))
 
-	// Inicjalizacja generatora liczb losowych
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	// Połączenie z drukarką (jeśli nie tryb testowy)
 	var fc *FiscalClient
 	if !*dryRun {
 		fmt.Printf("→ Łączę z drukarką %s:%d...\n", cfg.Printer.Host, cfg.Printer.Port)
@@ -121,7 +111,6 @@ func main() {
 		fmt.Println("⚠ TRYB TESTOWY - symulacja bez drukarki")
 	}
 
-	// Przetwarzanie transakcji dzień po dniu
 	totalReceipts := 0
 	totalErrors := 0
 
@@ -137,7 +126,6 @@ func main() {
 			receiptNum := i + 1
 			fmt.Printf("\n[%d/%d] Paragon %.2f zł... ", receiptNum, len(dayTransactions), float64(trans.Amount)/100.0)
 
-			// Losowanie produktów
 			products, err := selector.SelectProducts(trans.Amount)
 			if err != nil {
 				fmt.Printf("❌ BŁĄD: %v\n", err)
@@ -145,7 +133,6 @@ func main() {
 				continue
 			}
 
-			// Budowanie paragonu
 			receipt := &Receipt{
 				Total: trans.Amount,
 			}
@@ -159,43 +146,36 @@ func main() {
 				})
 			}
 
-			// Wyświetlenie pozycji
 			fmt.Println("✓")
 			for _, line := range receipt.Lines {
 				fmt.Printf("  • %s: %.2f zł\n", line.Name, float64(line.Price)/100.0)
 			}
 
-			// Drukowanie paragonu
 			if !*dryRun {
 				if err := fc.PrintReceipt(receipt); err != nil {
 					fmt.Printf("  ❌ BŁĄD DRUKOWANIA: %v\n", err)
 					totalErrors++
-					// Przywróć stan magazynowy (rollback)
 					continue
 				}
 			}
 
-			// Zmniejsz stan magazynowy (permanentnie)
 			if err := selector.DecrementStockPermanent(products); err != nil {
 				fmt.Printf("  ⚠ OSTRZEŻENIE: błąd aktualizacji stanu: %v\n", err)
 			}
 
 			totalReceipts++
 
-			// Krótka przerwa między paragonami
 			if !*dryRun {
 				time.Sleep(500 * time.Millisecond)
 			}
 		}
 	}
 
-	// Raport dobowy za dzisiejszą datę (po wszystkich paragonach)
 	todayDate := time.Now().Format("2006-01-02")
 	fmt.Printf("\n→ Czy wydrukować raport dobowy za dzisiaj (%s)? [t/N]: ", todayDate)
 
 	var printReport bool
 	if !*dryRun {
-		// Czekaj na potwierdzenie użytkownika
 		var response string
 		fmt.Scanln(&response)
 		response = strings.ToLower(strings.TrimSpace(response))
@@ -217,7 +197,6 @@ func main() {
 		fmt.Println("\n✓ [SYMULACJA] Raport dobowy (pominięty w trybie testowym)")
 	}
 
-	// Zapisanie zaktualizowanej konfiguracji (stan magazynowy)
 	fmt.Printf("\n→ Zapisuję zaktualizowany stan magazynowy...\n")
 	if err := cfg.SaveConfig(*configPath); err != nil {
 		fmt.Printf("⚠ OSTRZEŻENIE: nie udało się zapisać stanu: %v\n", err)
@@ -225,7 +204,6 @@ func main() {
 		fmt.Println("✓ Stan magazynowy zapisany")
 	}
 
-	// Podsumowanie
 	fmt.Printf("\n═══════════════════════════════════════\n")
 	fmt.Printf("📊 PODSUMOWANIE\n")
 	fmt.Printf("═══════════════════════════════════════\n")
@@ -233,7 +211,6 @@ func main() {
 	fmt.Printf("Błędów: %d\n", totalErrors)
 	fmt.Printf("Dni przetworzonych: %d\n", len(dates))
 
-	// Wyświetl stan magazynowy
 	fmt.Printf("\n📦 STAN MAGAZYNOWY:\n")
 	for _, p := range cfg.Products {
 		status := "✓"

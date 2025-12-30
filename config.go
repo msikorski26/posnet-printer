@@ -6,40 +6,35 @@ import (
 	"os"
 )
 
-// Product reprezentuje produkt w magazynie
 type Product struct {
-	Name     string  `json:"name"`      // Nazwa produktu na paragonie
-	MinPrice float64 `json:"min_price"` // Minimalna cena w zakresie (zł)
-	MaxPrice float64 `json:"max_price"` // Maksymalna cena w zakresie (zł)
-	Stock    int     `json:"stock"`     // Liczba sztuk na stanie
+	Name     string  `json:"name"`
+	MinPrice float64 `json:"min_price"`
+	MaxPrice float64 `json:"max_price"`
+	Stock    int     `json:"stock"`
 }
 
-// PrinterConfig zawiera ustawienia drukarki fiskalnej
 type PrinterConfig struct {
-	Host    string `json:"host"`    // IP drukarki
-	Port    int    `json:"port"`    // Port drukarki
-	Timeout int    `json:"timeout"` // Timeout w sekundach
-	LogTX   bool   `json:"log_tx"`  // Logowanie wysyłanych ramek
-	LogRX   bool   `json:"log_rx"`  // Logowanie odbieranych ramek
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	Timeout int    `json:"timeout"`
+	LogTX   bool   `json:"log_tx"`
+	LogRX   bool   `json:"log_rx"`
 }
 
-// FiscalConfig zawiera ustawienia fiskalne
 type FiscalConfig struct {
-	VATRate        int `json:"vat_rate"`        // Numer stawki VAT (0-6)
-	PaymentType    int `json:"payment_type"`    // Typ płatności: 0=gotówka, 2=karta, 8=przelew
-	ShippingChance int `json:"shipping_chance"` // Szansa na wysyłkę w % (np. 30)
-	ShippingPrice  int `json:"shipping_price"`  // Cena wysyłki w groszach (np. 1999 = 19,99 zł)
+	VATRate        int `json:"vat_rate"`
+	PaymentType    int `json:"payment_type"`
+	ShippingChance int `json:"shipping_chance"`
+	ShippingPrice  int `json:"shipping_price"`
 }
 
-// Config to główna struktura konfiguracji
 type Config struct {
 	Printer  PrinterConfig `json:"printer"`
 	Fiscal   FiscalConfig  `json:"fiscal"`
 	Products []Product     `json:"products"`
-	Encoding string        `json:"encoding"` // cp1250, latin2, mazovia, ascii
+	Encoding string        `json:"encoding"`
 }
 
-// LoadConfig wczytuje konfigurację z pliku JSON
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -51,7 +46,6 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("błąd parsowania JSON: %w", err)
 	}
 
-	// Walidacja
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -59,7 +53,6 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Validate sprawdza poprawność konfiguracji
 func (c *Config) Validate() error {
 	if c.Printer.Host == "" {
 		return fmt.Errorf("brak adresu IP drukarki")
@@ -97,7 +90,6 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// SaveConfig zapisuje konfigurację do pliku JSON
 func (c *Config) SaveConfig(path string) error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -111,7 +103,6 @@ func (c *Config) SaveConfig(path string) error {
 	return nil
 }
 
-// GetAvailableProducts zwraca produkty które są dostępne na stanie
 func (c *Config) GetAvailableProducts() []Product {
 	available := make([]Product, 0)
 	for _, p := range c.Products {
@@ -122,7 +113,6 @@ func (c *Config) GetAvailableProducts() []Product {
 	return available
 }
 
-// DecrementStock zmniejsza stan produktu o 1
 func (c *Config) DecrementStock(productName string) error {
 	for i := range c.Products {
 		if c.Products[i].Name == productName {
@@ -136,7 +126,6 @@ func (c *Config) DecrementStock(productName string) error {
 	return fmt.Errorf("produkt %s: nie znaleziono", productName)
 }
 
-// CreateExampleConfig tworzy przykładową konfigurację
 func CreateExampleConfig() *Config {
 	return &Config{
 		Printer: PrinterConfig{
@@ -147,17 +136,17 @@ func CreateExampleConfig() *Config {
 			LogRX:   true,
 		},
 		Fiscal: FiscalConfig{
-			VATRate:        0,     // 23% VAT (stawka A, vt0)
-			PaymentType:    8,     // Przelew
-			ShippingChance: 25,    // 25% szans
-			ShippingPrice:  1999,  // 19,99 zł
+			VATRate:        0,
+			PaymentType:    8,
+			ShippingChance: 25,
+			ShippingPrice:  1999,
 		},
 		Products: []Product{
 			{Name: "Spodnie", MinPrice: 50, MaxPrice: 90, Stock: 100},
 			{Name: "Sukienka", MinPrice: 90, MaxPrice: 150, Stock: 80},
 			{Name: "Kombinezon", MinPrice: 150, MaxPrice: 250, Stock: 50},
 			{Name: "Kurtka", MinPrice: 250, MaxPrice: 400, Stock: 40},
-			{Name: "Bluzka", MinPrice: 0, MaxPrice: 60, Stock: 150},
+			{Name: "Bluzka", MinPrice: 30, MaxPrice: 60, Stock: 150},
 			{Name: "Perfumy", MinPrice: 50, MaxPrice: 150, Stock: 60},
 			{Name: "Majtki", MinPrice: 20, MaxPrice: 50, Stock: 200},
 			{Name: "Leginsy", MinPrice: 40, MaxPrice: 60, Stock: 120},

@@ -70,7 +70,6 @@ func encodeText(enc Encoding, s string) ([]byte, error) {
 	}
 }
 
-// Minimalne mapowanie Mazovia dla PL (wariant spotykany w kasach).
 func encodeMazoviaPL(s string) []byte {
 	m := map[rune]byte{
 		'Ą': 0x8F, 'Ć': 0x95, 'Ę': 0x90, 'Ł': 0x9C, 'Ń': 0xA5, 'Ó': 0xA0, 'Ś': 0x98, 'Ź': 0xA3, 'Ż': 0xA1,
@@ -86,13 +85,11 @@ func encodeMazoviaPL(s string) []byte {
 			out = append(out, b)
 			continue
 		}
-		// Nieznane znaki -> spacja (bezpieczniej niż wysyłać bajty losowe)
 		out = append(out, ' ')
 	}
 	return out
 }
 
-// CRC16-CCITT: poly=0x1021 init=0x0000 refin=false refout=false xorout=0x0000
 func crc16CCITT(data []byte) uint16 {
 	var crc uint16 = 0x0000
 	for _, b := range data {
@@ -136,7 +133,6 @@ func Dial(ctx context.Context, addr string, enc Encoding, timeout time.Duration,
 
 func (c *Client) Close() error { return c.conn.Close() }
 
-// MakeFrame buduje: STX + payloadBytes + '#' + CRC(4 hex) + ETX
 func MakeFrame(payload []byte) []byte {
 	crc := crc16CCITT(payload)
 	crcStr := fmt.Sprintf("%04X", crc)
@@ -179,7 +175,6 @@ func (c *Client) ReadFrame(ctx context.Context) (string, error) {
 		_ = c.conn.SetReadDeadline(time.Now().Add(c.timeout))
 	}
 
-	// szukamy STX
 	for {
 		b, err := c.r.ReadByte()
 		if err != nil {
@@ -236,7 +231,6 @@ func sanitizeASCII(s string) string {
 	return s
 }
 
-// SuperForm200 API (tylko dla niefiskalnych wydruków testowych)
 type SuperForm200 struct {
 	c *Client
 }
