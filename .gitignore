@@ -1,0 +1,32 @@
+# Pliki konfiguracyjne
+config.json
+config_test.json
+config2.json
+*.json
+!config.example.json
+
+# Raporty
+/raporty/
+
+# Pliki kompilowane
+*.exe
+*.dll
+*.so
+*.dylib
+druk.exe
+druk
+
+# Pliki tymczasowe
+*.log
+*.tmp
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

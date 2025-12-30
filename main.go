@@ -1,0 +1,255 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"math/rand"
+	"os"
+	"strings"
+	"time"
+)
+
+func main() {
+	// Flagi wiersza poleceń
+	var (
+		configPath = flag.String("config", "config.json", "Ścieżka do pliku konfiguracji")
+		csvPath    = flag.String("csv", "", "Ścieżka do pliku CSV (np. raporty/01.csv) lub katalogu z plikami CSV")
+		createCfg  = flag.Bool("create-config", false, "Utwórz przykładowy plik konfiguracji i zakończ")
+		dryRun     = flag.Bool("dry-run", false, "Tryb testowy - nie łącz się z drukarką, tylko wyświetl co zostałoby wydrukowane")
+	)
+	flag.Parse()
+
+	// Utworzenie przykładowego configa
+	if *createCfg {
+		cfg := CreateExampleConfig()
+		if err := cfg.SaveConfig(*configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Błąd zapisu przykładowej konfiguracji: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Utworzono przykładową konfigurację: %s\n", *configPath)
+		fmt.Println("Edytuj plik i dostosuj ustawienia przed użyciem.")
+		return
+	}
+
+	// Sprawdzenie parametrów
+	if *csvPath == "" {
+		fmt.Fprintln(os.Stderr, "Błąd: wymagany parametr -csv")
+		fmt.Fprintln(os.Stderr, "Użycie: druk -csv raporty/01.csv [-config config.json]")
+		fmt.Fprintln(os.Stderr, "lub: druk -create-config [-config config.json]")
+		os.Exit(1)
+	}
+
+	// Wczytanie konfiguracji
+	fmt.Printf("→ Wczytuję konfigurację z %s...\n", *configPath)
+	cfg, err := LoadConfig(*configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Błąd wczytywania konfiguracji: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("✓ Konfiguracja wczytana")
+
+	// Zapisz początkowe stany produktów
+	initialStock := make(map[string]int)
+	for _, p := range cfg.Products {
+		initialStock[p.Name] = p.Stock
+	}
+
+	// Parsowanie CSV
+	fmt.Printf("→ Wczytuję transakcje z %s...\n", *csvPath)
+	var transactions []Transaction
+
+	// Sprawdź czy to plik czy katalog
+	info, err := os.Stat(*csvPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Błąd dostępu do %s: %v\n", *csvPath, err)
+		os.Exit(1)
+	}
+
+	if info.IsDir() {
+		transactions, err = ParseCSVDirectory(*csvPath)
+	} else {
+		transactions, err = ParseCSVFile(*csvPath)
+	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Błąd parsowania CSV: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(transactions) == 0 {
+		fmt.Fprintln(os.Stderr, "Błąd: brak transakcji w plikach CSV")
+		os.Exit(1)
+	}
+
+	fmt.Printf("✓ Wczytano %d transakcji\n", len(transactions))
+
+	// Grupowanie po datach
+	grouped := GroupByDate(transactions)
+	dates := GetUniqueDates(transactions)
+	fmt.Printf("✓ Znaleziono %d unikalnych dni\n", len(dates))
+
+	// Inicjalizacja generatora liczb losowych
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// Połączenie z drukarką (jeśli nie tryb testowy)
+	var fc *FiscalClient
+	if !*dryRun {
+		fmt.Printf("→ Łączę z drukarką %s:%d...\n", cfg.Printer.Host, cfg.Printer.Port)
+
+		enc, err := parseEncoding(cfg.Encoding)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Błąd parsowania encoding: %v\n", err)
+			os.Exit(1)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Printer.Timeout)*time.Second)
+		defer cancel()
+
+		client, err := Dial(ctx, fmt.Sprintf("%s:%d", cfg.Printer.Host, cfg.Printer.Port),
+			enc, time.Duration(cfg.Printer.Timeout)*time.Second,
+			cfg.Printer.LogTX, cfg.Printer.LogRX)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Błąd połączenia z drukarką: %v\n", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+
+		fc = NewFiscalClient(client, cfg.Fiscal.VATRate, cfg.Fiscal.PaymentType)
+		fmt.Println("✓ Połączono z drukarką")
+	} else {
+		fmt.Println("⚠ TRYB TESTOWY - symulacja bez drukarki")
+	}
+
+	// Przetwarzanie transakcji dzień po dniu
+	totalReceipts := 0
+	totalErrors := 0
+
+	for _, date := range dates {
+		dayTransactions := grouped[date]
+		fmt.Printf("\n═══════════════════════════════════════\n")
+		fmt.Printf("📅 Data: %s (%d paragonów)\n", date, len(dayTransactions))
+		fmt.Printf("═══════════════════════════════════════\n")
+
+		selector := NewProductSelector(cfg, rnd)
+
+		for i, trans := range dayTransactions {
+			receiptNum := i + 1
+			fmt.Printf("\n[%d/%d] Paragon %.2f zł... ", receiptNum, len(dayTransactions), float64(trans.Amount)/100.0)
+
+			// Losowanie produktów
+			products, err := selector.SelectProducts(trans.Amount)
+			if err != nil {
+				fmt.Printf("❌ BŁĄD: %v\n", err)
+				totalErrors++
+				continue
+			}
+
+			// Budowanie paragonu
+			receipt := &Receipt{
+				Total: trans.Amount,
+			}
+
+			for _, p := range products {
+				receipt.Lines = append(receipt.Lines, ReceiptLine{
+					Name:     p.Name,
+					Price:    p.Price,
+					Quantity: 1.0,
+					VATRate:  cfg.Fiscal.VATRate,
+				})
+			}
+
+			// Wyświetlenie pozycji
+			fmt.Println("✓")
+			for _, line := range receipt.Lines {
+				fmt.Printf("  • %s: %.2f zł\n", line.Name, float64(line.Price)/100.0)
+			}
+
+			// Drukowanie paragonu
+			if !*dryRun {
+				if err := fc.PrintReceipt(receipt); err != nil {
+					fmt.Printf("  ❌ BŁĄD DRUKOWANIA: %v\n", err)
+					totalErrors++
+					// Przywróć stan magazynowy (rollback)
+					continue
+				}
+			}
+
+			// Zmniejsz stan magazynowy (permanentnie)
+			if err := selector.DecrementStockPermanent(products); err != nil {
+				fmt.Printf("  ⚠ OSTRZEŻENIE: błąd aktualizacji stanu: %v\n", err)
+			}
+
+			totalReceipts++
+
+			// Krótka przerwa między paragonami
+			if !*dryRun {
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}
+
+	// Raport dobowy za dzisiejszą datę (po wszystkich paragonach)
+	todayDate := time.Now().Format("2006-01-02")
+	fmt.Printf("\n→ Czy wydrukować raport dobowy za dzisiaj (%s)? [t/N]: ", todayDate)
+
+	var printReport bool
+	if !*dryRun {
+		// Czekaj na potwierdzenie użytkownika
+		var response string
+		fmt.Scanln(&response)
+		response = strings.ToLower(strings.TrimSpace(response))
+		printReport = (response == "t" || response == "tak" || response == "y" || response == "yes")
+
+		if printReport {
+			fmt.Println("→ Drukuję raport dobowy...")
+			if err := fc.DailyReport(todayDate); err != nil {
+				fmt.Printf("❌ BŁĄD RAPORTU DOBOWEGO: %v\n", err)
+				totalErrors++
+			} else {
+				fmt.Println("✓ Raport dobowy wydrukowany")
+			}
+			time.Sleep(2 * time.Second)
+		} else {
+			fmt.Println("⊘ Pominięto raport dobowy")
+		}
+	} else {
+		fmt.Println("\n✓ [SYMULACJA] Raport dobowy (pominięty w trybie testowym)")
+	}
+
+	// Zapisanie zaktualizowanej konfiguracji (stan magazynowy)
+	fmt.Printf("\n→ Zapisuję zaktualizowany stan magazynowy...\n")
+	if err := cfg.SaveConfig(*configPath); err != nil {
+		fmt.Printf("⚠ OSTRZEŻENIE: nie udało się zapisać stanu: %v\n", err)
+	} else {
+		fmt.Println("✓ Stan magazynowy zapisany")
+	}
+
+	// Podsumowanie
+	fmt.Printf("\n═══════════════════════════════════════\n")
+	fmt.Printf("📊 PODSUMOWANIE\n")
+	fmt.Printf("═══════════════════════════════════════\n")
+	fmt.Printf("Wydrukowanych paragonów: %d\n", totalReceipts)
+	fmt.Printf("Błędów: %d\n", totalErrors)
+	fmt.Printf("Dni przetworzonych: %d\n", len(dates))
+
+	// Wyświetl stan magazynowy
+	fmt.Printf("\n📦 STAN MAGAZYNOWY:\n")
+	for _, p := range cfg.Products {
+		status := "✓"
+		if p.Stock == 0 {
+			status = "⚠"
+		} else if p.Stock < 0 {
+			status = "❌"
+		}
+		used := initialStock[p.Name] - p.Stock
+		fmt.Printf("  %s %-15s: %d szt. (użyto: %d)\n", status, p.Name, p.Stock, used)
+	}
+
+	if totalErrors > 0 {
+		fmt.Printf("\n⚠ Zakończono z błędami\n")
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n✓ Zakończono pomyślnie\n")
+}

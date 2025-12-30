@@ -1,0 +1,78 @@
+{
+  "printer": {
+    "host": "192.168.69.45",
+    "port": 12345,
+    "timeout": 5,
+    "log_tx": false,
+    "log_rx": true
+  },
+  "fiscal": {
+    "vat_rate": 0,
+    "payment_type": 8,
+    "shipping_chance": 25,
+    "shipping_price": 1999
+  },
+  "products": [
+    {
+      "name": "Spodnie",
+      "min_price": 50,
+      "max_price": 90,
+      "stock": 100
+    },
+    {
+      "name": "Sukienka",
+      "min_price": 90,
+      "max_price": 150,
+      "stock": 80
+    },
+    {
+      "name": "Kombinezon",
+      "min_price": 150,
+      "max_price": 250,
+      "stock": 50
+    },
+    {
+      "name": "Kurtka",
+      "min_price": 250,
+      "max_price": 400,
+      "stock": 40
+    },
+    {
+      "name": "Bluzka",
+      "min_price": 0,
+      "max_price": 60,
+      "stock": 150
+    },
+    {
+      "name": "Perfumy",
+      "min_price": 50,
+      "max_price": 150,
+      "stock": 60
+    },
+    {
+      "name": "Majtki",
+      "min_price": 20,
+      "max_price": 50,
+      "stock": 200
+    },
+    {
+      "name": "Leginsy",
+      "min_price": 40,
+      "max_price": 60,
+      "stock": 120
+    },
+    {
+      "name": "Sweter",
+      "min_price": 90,
+      "max_price": 200,
+      "stock": 70
+    },
+    {
+      "name": "Akcesoria kosmetyczne",
+      "min_price": 0,
+      "max_price": 10,
+      "stock": 228
+    }
+  ],
+  "encoding": "cp1250"
+}
