@@ -63,6 +63,30 @@ func (fc *FiscalClient) DailyReport(date string) error {
 	return nil
 }
 
+func (fc *FiscalClient) MonthlyReport() error {
+	var payload []byte
+	payload = append(payload, []byte("monthrep")...)
+	payload = append(payload, TAB)
+
+	if err := fc.SendBytes(payload); err != nil {
+		return fmt.Errorf("błąd wysyłania monthrep: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := fc.ReadFrame(ctx)
+	if err != nil {
+		return fmt.Errorf("błąd odczytu odpowiedzi monthrep: %w", err)
+	}
+
+	if strings.Contains(resp, "ERR") || strings.Contains(resp, "?") {
+		return fmt.Errorf("błąd wykonania monthrep: %s", resp)
+	}
+
+	return nil
+}
+
 func (fc *FiscalClient) PrintReceipt(receipt *Receipt) error {
 	ctx := context.Background()
 

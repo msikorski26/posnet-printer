@@ -11,6 +11,7 @@ type Product struct {
 	MinPrice float64 `json:"min_price"`
 	MaxPrice float64 `json:"max_price"`
 	Stock    int     `json:"stock"`
+	Used     int     `json:"used"`
 }
 
 type PrinterConfig struct {
@@ -31,7 +32,6 @@ type FiscalConfig struct {
 type Config struct {
 	Printer  PrinterConfig `json:"printer"`
 	Fiscal   FiscalConfig  `json:"fiscal"`
-	Products []Product     `json:"products"`
 	Encoding string        `json:"encoding"`
 }
 
@@ -70,23 +70,6 @@ func (c *Config) Validate() error {
 	if c.Fiscal.ShippingChance < 0 || c.Fiscal.ShippingChance > 100 {
 		return fmt.Errorf("szansa na wysyłkę poza zakresem 0-100%%: %d", c.Fiscal.ShippingChance)
 	}
-	if len(c.Products) == 0 {
-		return fmt.Errorf("brak produktów w konfiguracji")
-	}
-	for i, p := range c.Products {
-		if p.Name == "" {
-			return fmt.Errorf("produkt #%d: brak nazwy", i)
-		}
-		if p.MinPrice < 0 || p.MaxPrice < 0 {
-			return fmt.Errorf("produkt %s: ujemne ceny", p.Name)
-		}
-		if p.MinPrice > p.MaxPrice {
-			return fmt.Errorf("produkt %s: min_price > max_price", p.Name)
-		}
-		if p.Stock < 0 {
-			return fmt.Errorf("produkt %s: ujemny stan", p.Name)
-		}
-	}
 	return nil
 }
 
@@ -101,29 +84,6 @@ func (c *Config) SaveConfig(path string) error {
 	}
 
 	return nil
-}
-
-func (c *Config) GetAvailableProducts() []Product {
-	available := make([]Product, 0)
-	for _, p := range c.Products {
-		if p.Stock > 0 {
-			available = append(available, p)
-		}
-	}
-	return available
-}
-
-func (c *Config) DecrementStock(productName string) error {
-	for i := range c.Products {
-		if c.Products[i].Name == productName {
-			if c.Products[i].Stock <= 0 {
-				return fmt.Errorf("produkt %s: brak na stanie", productName)
-			}
-			c.Products[i].Stock--
-			return nil
-		}
-	}
-	return fmt.Errorf("produkt %s: nie znaleziono", productName)
 }
 
 func CreateExampleConfig() *Config {
@@ -141,6 +101,67 @@ func CreateExampleConfig() *Config {
 			ShippingChance: 25,
 			ShippingPrice:  1999,
 		},
+		Encoding: "cp1250",
+	}
+}
+
+type DataConfig struct {
+	Products []Product `json:"products"`
+}
+
+func LoadData(path string) (*DataConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("błąd odczytu pliku data: %w", err)
+	}
+
+	var dataConfig DataConfig
+	if err := json.Unmarshal(data, &dataConfig); err != nil {
+		return nil, fmt.Errorf("błąd parsowania JSON data: %w", err)
+	}
+
+	return &dataConfig, nil
+}
+
+func (d *DataConfig) SaveData(path string) error {
+	data, err := json.MarshalIndent(d, "", "  ")
+	if err != nil {
+		return fmt.Errorf("błąd serializacji JSON data: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("błąd zapisu pliku data: %w", err)
+	}
+
+	return nil
+}
+
+func (d *DataConfig) GetAvailableProducts() []Product {
+	available := make([]Product, 0)
+	for _, p := range d.Products {
+		if p.Stock > 0 {
+			available = append(available, p)
+		}
+	}
+	return available
+}
+
+func (d *DataConfig) DecrementStock(productName string) error {
+	for i := range d.Products {
+		if d.Products[i].Name == productName {
+			if d.Products[i].Stock <= 0 {
+				return fmt.Errorf("produkt %s: brak na stanie", productName)
+			}
+			d.Products[i].Stock--
+			d.Products[i].Used++
+			return nil
+		}
+	}
+	return fmt.Errorf("produkt %s: nie znaleziono", productName)
+}
+
+func CreateExampleData() *DataConfig {
+	return &DataConfig{
 		Products: []Product{
 			{Name: "Spodnie", MinPrice: 50, MaxPrice: 90, Stock: 100},
 			{Name: "Sukienka", MinPrice: 90, MaxPrice: 150, Stock: 80},
@@ -153,6 +174,5 @@ func CreateExampleConfig() *Config {
 			{Name: "Sweter", MinPrice: 90, MaxPrice: 200, Stock: 70},
 			{Name: "Akcesoria kosmetyczne", MinPrice: 0, MaxPrice: 10, Stock: 228},
 		},
-		Encoding: "cp1250",
 	}
 }

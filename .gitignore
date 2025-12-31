@@ -2,11 +2,13 @@
 config.json
 config_test.json
 config2.json
+data.json
 *.json
 !config.example.json
+!data.example.json
 
 # Raporty
-/raporty/
+/reports/
 
 # Pliki kompilowane
 *.exe

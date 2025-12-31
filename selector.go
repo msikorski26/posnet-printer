@@ -12,12 +12,14 @@ type SelectedProduct struct {
 
 type ProductSelector struct {
 	config *Config
+	data   *DataConfig
 	rnd    *rand.Rand
 }
 
-func NewProductSelector(config *Config, rnd *rand.Rand) *ProductSelector {
+func NewProductSelector(config *Config, data *DataConfig, rnd *rand.Rand) *ProductSelector {
 	return &ProductSelector{
 		config: config,
+		data:   data,
 		rnd:    rnd,
 	}
 }
@@ -87,7 +89,7 @@ func (ps *ProductSelector) tryFindCombination(targetZL float64, allowDuplicates 
 		return nil
 	}
 
-	available := ps.config.GetAvailableProducts()
+	available := ps.data.GetAvailableProducts()
 	if len(available) == 0 {
 		return nil
 	}
@@ -181,18 +183,18 @@ func (ps *ProductSelector) shuffleProducts(products []Product) {
 }
 
 func (ps *ProductSelector) decrementStockTemporary(name string) {
-	for i := range ps.config.Products {
-		if ps.config.Products[i].Name == name {
-			ps.config.Products[i].Stock--
+	for i := range ps.data.Products {
+		if ps.data.Products[i].Name == name {
+			ps.data.Products[i].Stock--
 			return
 		}
 	}
 }
 
 func (ps *ProductSelector) incrementStockTemporary(name string) {
-	for i := range ps.config.Products {
-		if ps.config.Products[i].Name == name {
-			ps.config.Products[i].Stock++
+	for i := range ps.data.Products {
+		if ps.data.Products[i].Name == name {
+			ps.data.Products[i].Stock++
 			return
 		}
 	}
@@ -203,7 +205,7 @@ func (ps *ProductSelector) DecrementStockPermanent(products []SelectedProduct) e
 		if p.Name == "Wysyłka" {
 			continue
 		}
-		if err := ps.config.DecrementStock(p.Name); err != nil {
+		if err := ps.data.DecrementStock(p.Name); err != nil {
 			return err
 		}
 	}

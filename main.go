@@ -12,10 +12,13 @@ import (
 
 func main() {
 	var (
-		configPath = flag.String("config", "config.json", "Ścieżka do pliku konfiguracji")
-		csvPath    = flag.String("csv", "", "Ścieżka do pliku CSV (np. raporty/01.csv) lub katalogu z plikami CSV")
-		createCfg  = flag.Bool("create-config", false, "Utwórz przykładowy plik konfiguracji i zakończ")
-		dryRun     = flag.Bool("dry-run", false, "Tryb testowy - nie łącz się z drukarką, tylko wyświetl co zostałoby wydrukowane")
+		configPath    = flag.String("config", "config.json", "Ścieżka do pliku konfiguracji")
+		dataPath      = flag.String("data", "data.json", "Ścieżka do pliku danych (produkty)")
+		csvPath       = flag.String("csv", "", "Ścieżka do pliku CSV (np. reports/01.csv) lub katalogu z plikami CSV")
+		createCfg     = flag.Bool("create-config", false, "Utwórz przykładowy plik konfiguracji i zakończ")
+		dryRun        = flag.Bool("dry-run", false, "Tryb testowy - nie łącz się z drukarką, tylko wyświetl co zostałoby wydrukowane")
+		dailyReport   = flag.String("daily-report", "", "Wydrukuj raport dobowy dla podanej daty (format: YYYY-MM-DD) lub puste dla bieżącego dnia")
+		monthlyReport = flag.Bool("monthly-report", false, "Wydrukuj raport miesięczny")
 	)
 	flag.Parse()
 
@@ -26,14 +29,92 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("✓ Utworzono przykładową konfigurację: %s\n", *configPath)
-		fmt.Println("Edytuj plik i dostosuj ustawienia przed użyciem.")
+
+		data := CreateExampleData()
+		if err := data.SaveData(*dataPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Błąd zapisu przykładowych danych: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Utworzono przykładowe dane produktów: %s\n", *dataPath)
+		fmt.Println("Edytuj pliki i dostosuj ustawienia przed użyciem.")
+		return
+	}
+
+	if *dailyReport != "" || *monthlyReport {
+		fmt.Printf("→ Wczytuję konfigurację z %s...\n", *configPath)
+		cfg, err := LoadConfig(*configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Błąd wczytywania konfiguracji: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("✓ Konfiguracja wczytana")
+
+		if *dryRun {
+			fmt.Println("⚠ TRYB TESTOWY - symulacja bez drukarki")
+			if *dailyReport != "" {
+				reportDate := *dailyReport
+				if reportDate == "" {
+					reportDate = time.Now().Format("2006-01-02")
+				}
+				fmt.Printf("✓ [SYMULACJA] Raport dobowy za %s\n", reportDate)
+			}
+			if *monthlyReport {
+				fmt.Println("✓ [SYMULACJA] Raport miesięczny")
+			}
+			return
+		}
+
+		fmt.Printf("→ Łączę z drukarką %s:%d...\n", cfg.Printer.Host, cfg.Printer.Port)
+
+		enc, err := parseEncoding(cfg.Encoding)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Błąd parsowania encoding: %v\n", err)
+			os.Exit(1)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Printer.Timeout)*time.Second)
+		defer cancel()
+
+		client, err := Dial(ctx, fmt.Sprintf("%s:%d", cfg.Printer.Host, cfg.Printer.Port),
+			enc, time.Duration(cfg.Printer.Timeout)*time.Second,
+			cfg.Printer.LogTX, cfg.Printer.LogRX)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Błąd połączenia z drukarką: %v\n", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+
+		fc := NewFiscalClient(client, cfg.Fiscal.VATRate, cfg.Fiscal.PaymentType)
+		fmt.Println("✓ Połączono z drukarką")
+
+		if *dailyReport != "" {
+			reportDate := *dailyReport
+			fmt.Printf("→ Drukuję raport dobowy za %s...\n", reportDate)
+			if err := fc.DailyReport(reportDate); err != nil {
+				fmt.Fprintf(os.Stderr, "❌ BŁĄD RAPORTU DOBOWEGO: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("✓ Raport dobowy wydrukowany")
+		}
+
+		if *monthlyReport {
+			fmt.Println("→ Drukuję raport miesięczny...")
+			if err := fc.MonthlyReport(); err != nil {
+				fmt.Fprintf(os.Stderr, "❌ BŁĄD RAPORTU MIESIĘCZNEGO: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("✓ Raport miesięczny wydrukowany")
+		}
+
 		return
 	}
 
 	if *csvPath == "" {
 		fmt.Fprintln(os.Stderr, "Błąd: wymagany parametr -csv")
-		fmt.Fprintln(os.Stderr, "Użycie: druk -csv raporty/01.csv [-config config.json]")
+		fmt.Fprintln(os.Stderr, "Użycie: druk -csv reports/01.csv [-config config.json]")
 		fmt.Fprintln(os.Stderr, "lub: druk -create-config [-config config.json]")
+		fmt.Fprintln(os.Stderr, "lub: druk -daily-report [YYYY-MM-DD] [-config config.json]")
+		fmt.Fprintln(os.Stderr, "lub: druk -monthly-report [-config config.json]")
 		os.Exit(1)
 	}
 
@@ -45,10 +126,13 @@ func main() {
 	}
 	fmt.Println("✓ Konfiguracja wczytana")
 
-	initialStock := make(map[string]int)
-	for _, p := range cfg.Products {
-		initialStock[p.Name] = p.Stock
+	fmt.Printf("→ Wczytuję dane produktów z %s...\n", *dataPath)
+	dataConfig, err := LoadData(*dataPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Błąd wczytywania danych: %v\n", err)
+		os.Exit(1)
 	}
+	fmt.Println("✓ Dane produktów wczytane")
 
 	fmt.Printf("→ Wczytuję transakcje z %s...\n", *csvPath)
 	var transactions []Transaction
@@ -120,7 +204,7 @@ func main() {
 		fmt.Printf("📅 Data: %s (%d paragonów)\n", date, len(dayTransactions))
 		fmt.Printf("═══════════════════════════════════════\n")
 
-		selector := NewProductSelector(cfg, rnd)
+		selector := NewProductSelector(cfg, dataConfig, rnd)
 
 		for i, trans := range dayTransactions {
 			receiptNum := i + 1
@@ -169,36 +253,35 @@ func main() {
 				time.Sleep(500 * time.Millisecond)
 			}
 		}
-	}
 
-	todayDate := time.Now().Format("2006-01-02")
-	fmt.Printf("\n→ Czy wydrukować raport dobowy za dzisiaj (%s)? [t/N]: ", todayDate)
+		fmt.Printf("\n→ Czy wydrukować raport dobowy za %s? [t/N]: ", date)
 
-	var printReport bool
-	if !*dryRun {
-		var response string
-		fmt.Scanln(&response)
-		response = strings.ToLower(strings.TrimSpace(response))
-		printReport = (response == "t" || response == "tak" || response == "y" || response == "yes")
+		var printReport bool
+		if !*dryRun {
+			var response string
+			fmt.Scanln(&response)
+			response = strings.ToLower(strings.TrimSpace(response))
+			printReport = (response == "t" || response == "tak" || response == "y" || response == "yes")
 
-		if printReport {
-			fmt.Println("→ Drukuję raport dobowy...")
-			if err := fc.DailyReport(todayDate); err != nil {
-				fmt.Printf("❌ BŁĄD RAPORTU DOBOWEGO: %v\n", err)
-				totalErrors++
+			if printReport {
+				fmt.Printf("→ Drukuję raport dobowy za %s...\n", date)
+				if err := fc.DailyReport(date); err != nil {
+					fmt.Printf("❌ BŁĄD RAPORTU DOBOWEGO: %v\n", err)
+					totalErrors++
+				} else {
+					fmt.Println("✓ Raport dobowy wydrukowany")
+				}
+				time.Sleep(2 * time.Second)
 			} else {
-				fmt.Println("✓ Raport dobowy wydrukowany")
+				fmt.Println("⊘ Pominięto raport dobowy")
 			}
-			time.Sleep(2 * time.Second)
 		} else {
-			fmt.Println("⊘ Pominięto raport dobowy")
+			fmt.Printf("\n✓ [SYMULACJA] Raport dobowy za %s (pominięty w trybie testowym)\n", date)
 		}
-	} else {
-		fmt.Println("\n✓ [SYMULACJA] Raport dobowy (pominięty w trybie testowym)")
 	}
 
 	fmt.Printf("\n→ Zapisuję zaktualizowany stan magazynowy...\n")
-	if err := cfg.SaveConfig(*configPath); err != nil {
+	if err := dataConfig.SaveData(*dataPath); err != nil {
 		fmt.Printf("⚠ OSTRZEŻENIE: nie udało się zapisać stanu: %v\n", err)
 	} else {
 		fmt.Println("✓ Stan magazynowy zapisany")
@@ -212,15 +295,14 @@ func main() {
 	fmt.Printf("Dni przetworzonych: %d\n", len(dates))
 
 	fmt.Printf("\n📦 STAN MAGAZYNOWY:\n")
-	for _, p := range cfg.Products {
+	for _, p := range dataConfig.Products {
 		status := "✓"
 		if p.Stock == 0 {
 			status = "⚠"
 		} else if p.Stock < 0 {
 			status = "❌"
 		}
-		used := initialStock[p.Name] - p.Stock
-		fmt.Printf("  %s %-15s: %d szt. (użyto: %d)\n", status, p.Name, p.Stock, used)
+		fmt.Printf("  %s %-15s: %d szt. (użyto: %d)\n", status, p.Name, p.Stock, p.Used)
 	}
 
 	if totalErrors > 0 {
