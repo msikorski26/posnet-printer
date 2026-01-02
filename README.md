@@ -2,83 +2,79 @@
 
 Program do automatycznego drukowania paragonów fiskalnych na drukarce POSNET przez protokół TCP.
 
-## Funkcjonalność
-
-- Wczytywanie transakcji z plików CSV lub całych katalogów
-- Automatyczne losowanie produktów dopasowanych do kwoty paragonu
-- Konfigurowalny % szans na dodanie wysyłki
-- Zarządzanie stanem magazynowym z śledzeniem użycia
-- **Automatyczne pytanie o raport dzienny po każdym dniu**
-- **Manualne drukowanie raportów dobowych i miesięcznych**
-- **Oddzielna konfiguracja (config.json) i dane produktów (data.json)**
-- Komunikacja z drukarką fiskalną POSNET przez protokół TCP
-- Tryb testowy (dry-run) bez drukarki
-
-## Wymagania
-
-- Go 1.21+
-- Drukarka fiskalna POSNET z dostępem TCP/IP
-
-## Instalacja
-
-### Kompilacja ze źródeł
+## Szybki start
 
 ```bash
-# Kompilacja
-go build -o druk.exe .
+# 1. Kompilacja
+go build -o posnet-printer.exe
 
-# Lub uruchomienie bezpośrednio
-go run . [parametry]
+# 2. Utworzenie konfiguracji
+posnet-printer.exe -create-config
+
+# 3. Edycja config.json i data.json
+#    - Ustaw IP i port drukarki w config.json
+#    - Dodaj produkty w data.json
+
+# 4. Drukowanie paragonów
+posnet-printer.exe -csv reports/
 ```
 
+## Spis komend
 
-## Konfiguracja
-
-```bash
-# Utwórz przykładowe pliki config.json i data.json
-druk -create-config
-
-# Edytuj config.json
-# - Ustaw IP i port drukarki
-# - Skonfiguruj stawkę VAT i metodę płatności
-# - Ustaw encoding (domyślnie cp1250)
-
-# Edytuj data.json
-# - Dodaj/edytuj produkty
-# - Ustaw ceny min/max dla każdego produktu
-# - Ustaw stany magazynowe
-```
-
-## Użycie
-
-### Drukowanie paragonów
+### Podstawowe komendy
 
 ```bash
-# Drukowanie z pojedynczego pliku CSV
-druk -csv reports/01.csv
+# Utworzenie przykładowych plików konfiguracji
+posnet-printer.exe -create-config
 
-# Drukowanie z całego katalogu (wszystkie pliki *.csv)
-druk -csv reports/
+# Drukowanie paragonów z pojedynczego pliku CSV
+posnet-printer.exe -csv reports/01.csv
+
+# Drukowanie paragonów z całego katalogu
+posnet-printer.exe -csv reports/
 
 # Tryb testowy (bez drukarki)
-druk -csv reports/ -dry-run
-
-# Własna ścieżka do plików konfiguracji
-druk -csv reports/ -config my-config.json -data my-data.json
+posnet-printer.exe -csv reports/ -dry-run
 ```
 
-### Manualne raporty
+### Raporty fiskalne
 
 ```bash
-# Raport dobowy za konkretną datę
-druk -daily-report 2024-12-31
+# Raport dobowy (zawsze dla bieżącego dnia)
+posnet-printer.exe -daily-report true
 
-# Raport miesięczny
-druk -monthly-report
+# Raport miesięczny (pełny) dla bieżącego miesiąca
+posnet-printer.exe -monthly-report true
 
-# Kombinacja raportów
-druk -daily-report 2024-12-31 -monthly-report
+# Raport miesięczny dla czerwca 2021
+posnet-printer.exe -monthly-report "2021-06-19"
+
+# Raport miesięczny skrócony
+posnet-printer.exe -monthly-report true -monthly-report-summary
+
+# Raport miesięczny skrócony dla czerwca 2021
+posnet-printer.exe -monthly-report "2021-06-19" -monthly-report-summary
 ```
+
+### Niestandardowa konfiguracja
+
+```bash
+# Własne ścieżki do plików konfiguracji
+posnet-printer.exe -csv reports/ -config my-config.json -data my-data.json
+```
+
+## Parametry CLI
+
+| Parametr | Typ | Opis |
+|----------|-----|------|
+| `-config` | string | Ścieżka do pliku konfiguracji (domyślnie: `config.json`) |
+| `-data` | string | Ścieżka do pliku danych produktów (domyślnie: `data.json`) |
+| `-csv` | string | Ścieżka do pliku/katalogu CSV |
+| `-create-config` | bool | Utwórz przykładowe pliki config.json i data.json |
+| `-dry-run` | bool | Tryb testowy bez drukarki |
+| `-daily-report` | string | Wydrukuj raport dobowy (zawsze dla bieżącego dnia) |
+| `-monthly-report` | string | Wydrukuj raport miesięczny (format: YYYY-MM-DD lub puste dla bieżącego miesiąca) |
+| `-monthly-report-summary` | bool | Raport miesięczny w wersji skróconej |
 
 ## Format pliku CSV
 
@@ -86,30 +82,13 @@ druk -daily-report 2024-12-31 -monthly-report
 2025-12-01; 197,99
 2025-12-01; 158,94
 2025-12-02; 230,50
-2025-12-02; 189,00
 ```
 
 Format: `YYYY-MM-DD; KWOTA` (kwota z przecinkiem)
 
-## Automatyczne pytanie o raporty dzienne
-
-Program automatycznie pyta o raport dzienny po zakończeniu drukowania paragonów z każdego dnia:
-
-```
-📅 Data: 2024-12-01 (10 paragonów)
-...
-[drukowanie paragonów]
-...
-
-→ Czy wydrukować raport dobowy za 2024-12-01? [t/N]: t
-→ Drukuję raport dobowy za 2024-12-01...
-✓ Raport dobowy wydrukowany
-```
-
-## Struktura plików konfiguracyjnych
+## Pliki konfiguracyjne
 
 ### config.json
-Zawiera ustawienia drukarki i konfigurację fiskalną:
 ```json
 {
   "printer": {
@@ -130,7 +109,6 @@ Zawiera ustawienia drukarki i konfigurację fiskalną:
 ```
 
 ### data.json
-Zawiera dane produktów i stany magazynowe:
 ```json
 {
   "products": [
@@ -145,62 +123,16 @@ Zawiera dane produktów i stany magazynowe:
 }
 ```
 
-Pole `used` automatycznie śledzi ile sztuk danego produktu zostało użytych.
+## Funkcjonalność
 
-## Parametry CLI
+- Wczytywanie transakcji z plików CSV lub katalogów
+- Automatyczne losowanie produktów dopasowanych do kwoty
+- Zarządzanie stanem magazynowym
+- Automatyczne pytanie o raport dzienny po każdym dniu
+- Manualne drukowanie raportów dobowych i miesięcznych
+- Tryb testowy (dry-run)
 
-| Parametr | Opis | Domyślna wartość |
-|----------|------|------------------|
-| `-config` | Ścieżka do pliku konfiguracji | `config.json` |
-| `-data` | Ścieżka do pliku danych produktów | `data.json` |
-| `-csv` | Ścieżka do pliku/katalogu CSV | - |
-| `-create-config` | Utwórz przykładowe pliki konfiguracji | - |
-| `-dry-run` | Tryb testowy bez drukarki | `false` |
-| `-daily-report` | Wydrukuj raport dobowy (format: YYYY-MM-DD) | - |
-| `-monthly-report` | Wydrukuj raport miesięczny | `false` |
+## Wymagania
 
-## Przykłady
-
-### Podstawowe użycie
-```bash
-# Pierwszy raz - utworzenie konfiguracji
-druk -create-config
-
-# Drukowanie paragonów z katalogu
-druk -csv reports/
-
-# Raport dzienny
-druk -daily-report 2024-12-31
-```
-
-### Zaawansowane użycie
-```bash
-# Drukowanie z niestandardowymi plikami konfiguracji
-druk -csv december/ -config config-december.json -data data-december.json
-
-# Testowanie bez drukarki
-druk -csv reports/ -dry-run
-
-# Manualne raporty
-druk -daily-report 2024-12-31 -monthly-report
-```
-
-## Stan magazynowy
-
-Po zakończeniu drukowania program wyświetla raport stanu magazynowego:
-
-```
-📦 STAN MAGAZYNOWY:
-  ✓ Spodnie        : 85 szt. (użyto: 15)
-  ✓ Sukienka       : 70 szt. (użyto: 10)
-  ⚠ Kurtka         : 0 szt. (użyto: 40)
-  ✓ Bluzka         : 145 szt. (użyto: 5)
-```
-
-- ✓ = dostępne na stanie
-- ⚠ = brak na stanie (0)
-- ❌ = ujemny stan (błąd)
-
-## Licencja
-
-Użytek prywatny.
+- Go 1.21+
+- Drukarka fiskalna POSNET z dostępem TCP/IP
