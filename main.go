@@ -17,8 +17,9 @@ func main() {
 		csvPath       = flag.String("csv", "", "Ścieżka do pliku CSV (np. reports/01.csv) lub katalogu z plikami CSV")
 		createCfg     = flag.Bool("create-config", false, "Utwórz przykładowy plik konfiguracji i zakończ")
 		dryRun        = flag.Bool("dry-run", false, "Tryb testowy - nie łącz się z drukarką, tylko wyświetl co zostałoby wydrukowane")
-		dailyReport   = flag.String("daily-report", "", "Wydrukuj raport dobowy dla podanej daty (format: YYYY-MM-DD) lub puste dla bieżącego dnia")
-		monthlyReport = flag.Bool("monthly-report", false, "Wydrukuj raport miesięczny")
+		dailyReport          = flag.String("daily-report", "", "Wydrukuj raport dobowy (zawsze dla bieżącego dnia)")
+		monthlyReport        = flag.String("monthly-report", "", "Wydrukuj raport miesięczny dla podanej daty (format: YYYY-MM-DD, brana pod uwagę tylko miesiąc i rok) lub puste dla bieżącego miesiąca")
+		monthlyReportSummary = flag.Bool("monthly-report-summary", false, "Raport miesięczny w wersji skróconej (podsumowanie)")
 	)
 	flag.Parse()
 
@@ -40,7 +41,7 @@ func main() {
 		return
 	}
 
-	if *dailyReport != "" || *monthlyReport {
+	if *dailyReport != "" || *monthlyReport != "" {
 		fmt.Printf("→ Wczytuję konfigurację z %s...\n", *configPath)
 		cfg, err := LoadConfig(*configPath)
 		if err != nil {
@@ -52,13 +53,9 @@ func main() {
 		if *dryRun {
 			fmt.Println("⚠ TRYB TESTOWY - symulacja bez drukarki")
 			if *dailyReport != "" {
-				reportDate := *dailyReport
-				if reportDate == "" {
-					reportDate = time.Now().Format("2006-01-02")
-				}
-				fmt.Printf("✓ [SYMULACJA] Raport dobowy za %s\n", reportDate)
+				fmt.Println("✓ [SYMULACJA] Raport dobowy")
 			}
-			if *monthlyReport {
+			if *monthlyReport != "" {
 				fmt.Println("✓ [SYMULACJA] Raport miesięczny")
 			}
 			return
@@ -88,18 +85,21 @@ func main() {
 		fmt.Println("✓ Połączono z drukarką")
 
 		if *dailyReport != "" {
-			reportDate := *dailyReport
-			fmt.Printf("→ Drukuję raport dobowy za %s...\n", reportDate)
-			if err := fc.DailyReport(reportDate); err != nil {
+			fmt.Println("→ Drukuję raport dobowy...")
+			if err := fc.DailyReport(""); err != nil {
 				fmt.Fprintf(os.Stderr, "❌ BŁĄD RAPORTU DOBOWEGO: %v\n", err)
 				os.Exit(1)
 			}
 			fmt.Println("✓ Raport dobowy wydrukowany")
 		}
 
-		if *monthlyReport {
-			fmt.Println("→ Drukuję raport miesięczny...")
-			if err := fc.MonthlyReport(); err != nil {
+		if *monthlyReport != "" {
+			reportType := "pełny"
+			if *monthlyReportSummary {
+				reportType = "skrócony"
+			}
+			fmt.Printf("→ Drukuję raport miesięczny (%s)...\n", reportType)
+			if err := fc.MonthlyReport(*monthlyReport, *monthlyReportSummary); err != nil {
 				fmt.Fprintf(os.Stderr, "❌ BŁĄD RAPORTU MIESIĘCZNEGO: %v\n", err)
 				os.Exit(1)
 			}
@@ -254,7 +254,7 @@ func main() {
 			}
 		}
 
-		fmt.Printf("\n→ Czy wydrukować raport dobowy za %s? [t/N]: ", date)
+		fmt.Print("\n→ Czy wydrukować raport dobowy? [t/N]: ")
 
 		var printReport bool
 		if !*dryRun {
@@ -264,8 +264,8 @@ func main() {
 			printReport = (response == "t" || response == "tak" || response == "y" || response == "yes")
 
 			if printReport {
-				fmt.Printf("→ Drukuję raport dobowy za %s...\n", date)
-				if err := fc.DailyReport(date); err != nil {
+				fmt.Println("→ Drukuję raport dobowy...")
+				if err := fc.DailyReport(""); err != nil {
 					fmt.Printf("❌ BŁĄD RAPORTU DOBOWEGO: %v\n", err)
 					totalErrors++
 				} else {
@@ -276,7 +276,7 @@ func main() {
 				fmt.Println("⊘ Pominięto raport dobowy")
 			}
 		} else {
-			fmt.Printf("\n✓ [SYMULACJA] Raport dobowy za %s (pominięty w trybie testowym)\n", date)
+			fmt.Println("\n✓ [SYMULACJA] Raport dobowy (pominięty w trybie testowym)")
 		}
 	}
 

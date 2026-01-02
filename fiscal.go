@@ -63,9 +63,22 @@ func (fc *FiscalClient) DailyReport(date string) error {
 	return nil
 }
 
-func (fc *FiscalClient) MonthlyReport() error {
+func (fc *FiscalClient) MonthlyReport(date string, summary bool) error {
 	var payload []byte
-	payload = append(payload, []byte("monthrep")...)
+	payload = append(payload, []byte("monthlyrep")...)
+	payload = append(payload, TAB)
+
+	if date != "" {
+		payload = append(payload, []byte("da")...)
+		payload = append(payload, []byte(date)...)
+		payload = append(payload, TAB)
+	}
+
+	if summary {
+		payload = append(payload, []byte("su1")...)
+	} else {
+		payload = append(payload, []byte("su0")...)
+	}
 	payload = append(payload, TAB)
 
 	if err := fc.SendBytes(payload); err != nil {
